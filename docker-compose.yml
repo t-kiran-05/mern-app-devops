@@ -1,17 +1,42 @@
-version: "3"
+version: '3.8'
+
 services:
   backend:
     build: ./backend
+    container_name: backend
     ports:
       - "5000:5000"
-    restart: always
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - mongo
+    networks:
+      - mern-net
 
   frontend:
     build: ./frontend
+    container_name: frontend
     ports:
       - "3000:3000"
-    environment:
-      - REACT_APP_API_URL=http://localhost:5000
+    stdin_open: true
+    tty: true
     depends_on:
       - backend
-    restart: always
+    networks:
+      - mern-net
+
+  mongo:
+    image: mongo:6.0
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - mern-net
+
+volumes:
+  mongo-data:
+
+networks:
+  mern-net:
