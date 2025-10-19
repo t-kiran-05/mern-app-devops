@@ -11,12 +11,10 @@ services:
       - mongo
     networks:
       - mern-net
+    restart: unless-stopped
 
-    frontend:
-    build:
-      context: ./frontend
-      args:
-        REACT_APP_API_URL: ${REACT_APP_API_URL}
+  frontend:
+    build: ./frontend
     container_name: frontend
     env_file:
       - ./frontend/.env
@@ -28,7 +26,7 @@ services:
       - backend
     networks:
       - mern-net
-
+    restart: unless-stopped
 
   mongo:
     image: mongo:6.0
@@ -39,6 +37,7 @@ services:
       - mongo-data:/data/db
     networks:
       - mern-net
+    restart: unless-stopped
 
 volumes:
   mongo-data:
