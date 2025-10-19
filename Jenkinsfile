@@ -9,6 +9,7 @@ pipeline {
         MONGO_CONTAINER_NAME = 'mongo-jenkins'
         MONGO_PORT = '27018'
         MONGO_VOLUME = 'mongo-data-jenkins'
+        NETWORK_NAME = 'mern-net-jenkins'
     }
     stages {
         stage('Checkout') {
@@ -23,7 +24,7 @@ pipeline {
                 echo '⚙️ Creating environment files for Jenkins deployment...'
                 sh """
                 # Create backend .env with correct port
-                echo "MONGO_URI=mongodb://mongo:27017/mern-ecommerce" > backend/.env.jenkins
+                echo "MONGO_URI=mongodb://${MONGO_CONTAINER_NAME}:27017/mern-ecommerce" > backend/.env.jenkins
                 echo "NODE_ENV=production" >> backend/.env.jenkins
                 echo "PORT=5000" >> backend/.env.jenkins
                 
@@ -37,20 +38,32 @@ pipeline {
             steps {
                 echo '🐳 Building and deploying with Docker Compose (Jenkins ports)...'
                 sh """
-                # Stop and remove only Jenkins containers to avoid affecting manual deployment
+                # Create custom network for Jenkins deployment
+                docker network create ${NETWORK_NAME} || true
+                
+                # Stop and remove only Jenkins containers
                 docker stop ${BACKEND_CONTAINER_NAME} ${FRONTEND_CONTAINER_NAME} ${MONGO_CONTAINER_NAME} || true
                 docker rm ${BACKEND_CONTAINER_NAME} ${FRONTEND_CONTAINER_NAME} ${MONGO_CONTAINER_NAME} || true
                 
-                # Build and run with custom ports and container names
+                # Build images
                 docker build -t backend-jenkins ./backend
                 docker build -t frontend-jenkins ./frontend
                 
-                # Run backend
+                # Run MongoDB first
+                docker run -d \\
+                  --name ${MONGO_CONTAINER_NAME} \\
+                  -p ${MONGO_PORT}:27017 \\
+                  -v ${MONGO_VOLUME}:/data/db \\
+                  --network ${NETWORK_NAME} \\
+                  mongo:6.0
+                
+                # Run backend (wait for MongoDB)
+                sleep 5
                 docker run -d \\
                   --name ${BACKEND_CONTAINER_NAME} \\
                   -p ${BACKEND_PORT}:5000 \\
                   --env-file backend/.env.jenkins \\
-                  --network mern-app-devops_mern-net \\
+                  --network ${NETWORK_NAME} \\
                   backend-jenkins
                 
                 # Run frontend  
@@ -58,16 +71,8 @@ pipeline {
                   --name ${FRONTEND_CONTAINER_NAME} \\
                   -p ${FRONTEND_PORT}:3000 \\
                   --env-file frontend/.env.jenkins \\
-                  --network mern-app-devops_mern-net \\
+                  --network ${NETWORK_NAME} \\
                   frontend-jenkins
-                
-                # Run MongoDB
-                docker run -d \\
-                  --name ${MONGO_CONTAINER_NAME} \\
-                  -p ${MONGO_PORT}:27017 \\
-                  -v ${MONGO_VOLUME}:/data/db \\
-                  --network mern-app-devops_mern-net \\
-                  mongo:6.0
                 """
             }
         }
@@ -84,13 +89,14 @@ pipeline {
     post {
         always {
             echo '📊 Pipeline completed. Checking container status:'
-            sh 'docker ps'
+            sh 'docker ps | grep jenkins'
         }
         success {
             echo '✅ Pipeline completed successfully!'
             echo "🎯 Jenkins Deployment URLs:"
             echo "Frontend: http://${EC2_IP}:${FRONTEND_PORT}"
             echo "Backend API: http://${EC2_IP}:${BACKEND_PORT}"
+            echo "MongoDB: ${EC2_IP}:${MONGO_PORT}"
         }
         failure {
             echo '❌ Pipeline failed!'
