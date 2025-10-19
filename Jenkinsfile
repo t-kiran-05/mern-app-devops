@@ -23,56 +23,142 @@ pipeline {
             steps {
                 echo '⚙️ Creating environment files for Jenkins deployment...'
                 sh """
-                # Create backend .env with correct port
+                # Create backend .env.jenkins with correct MongoDB connection
                 echo "MONGO_URI=mongodb://${MONGO_CONTAINER_NAME}:27017/mern-ecommerce" > backend/.env.jenkins
                 echo "NODE_ENV=production" >> backend/.env.jenkins
+                echo "SECRET_KEY=mysecret123" >> backend/.env.jenkins
                 echo "PORT=5000" >> backend/.env.jenkins
                 
-                # Create frontend .env with correct backend port
+                # Create frontend .env.jenkins with Jenkins backend port (5001)
                 echo "REACT_APP_API_URL=http://${EC2_IP}:${BACKEND_PORT}" > frontend/.env.jenkins
                 """
             }
         }
         
-        stage('Build and Deploy') {
+        stage('Cleanup') {
             steps {
-                echo '🐳 Building and deploying with Docker Compose (Jenkins ports)...'
+                echo '🧹 Cleaning up previous Jenkins deployment...'
                 sh """
-                # Create custom network for Jenkins deployment
+                # Clean up Docker to save space
+                docker system prune -f || true
+                
+                # Remove old network and recreate
+                docker network rm ${NETWORK_NAME} || true
+                sleep 2
                 docker network create ${NETWORK_NAME} || true
                 
-                # Stop and remove only Jenkins containers
+                # Stop and remove ONLY Jenkins containers
                 docker stop ${BACKEND_CONTAINER_NAME} ${FRONTEND_CONTAINER_NAME} ${MONGO_CONTAINER_NAME} || true
+                sleep 2
                 docker rm ${BACKEND_CONTAINER_NAME} ${FRONTEND_CONTAINER_NAME} ${MONGO_CONTAINER_NAME} || true
+                """
+            }
+        }
+        
+        stage('Build Images') {
+            steps {
+                echo '🏗️ Building Docker images...'
+                sh """
+                # Build backend
+                echo "Building backend image..."
+                docker build -t backend-jenkins ./backend || {
+                    echo "❌ Backend build failed"
+                    exit 1
+                }
                 
-                # Build images
-                docker build -t backend-jenkins ./backend
-                docker build -t frontend-jenkins ./frontend
+                # Build frontend with retry logic
+                echo "Building frontend image..."
+                if ! docker build -t frontend-jenkins ./frontend; then
+                    echo "⚠️ Frontend build failed, retrying..."
+                    sleep 5
+                    docker build -t frontend-jenkins ./frontend || {
+                        echo "❌ Frontend build failed after retry"
+                        exit 1
+                    }
+                fi
+                echo "✅ Both images built successfully"
+                """
+            }
+        }
+        
+        stage('Deploy Containers') {
+            steps {
+                echo '🐳 Deploying containers...'
+                sh """
+                # Verify images exist
+                docker images | grep jenkins || {
+                    echo "❌ Jenkins images not found"
+                    exit 1
+                }
                 
                 # Run MongoDB first
+                echo "Starting MongoDB..."
                 docker run -d \\
                   --name ${MONGO_CONTAINER_NAME} \\
                   -p ${MONGO_PORT}:27017 \\
                   -v ${MONGO_VOLUME}:/data/db \\
                   --network ${NETWORK_NAME} \\
-                  mongo:6.0
+                  mongo:6.0 || {
+                    echo "❌ MongoDB failed to start"
+                    exit 1
+                }
                 
-                # Run backend (wait for MongoDB)
-                sleep 5
+                # Wait for MongoDB to be ready
+                echo "Waiting for MongoDB..."
+                sleep 15
+                
+                # Run backend
+                echo "Starting backend..."
                 docker run -d \\
                   --name ${BACKEND_CONTAINER_NAME} \\
                   -p ${BACKEND_PORT}:5000 \\
                   --env-file backend/.env.jenkins \\
                   --network ${NETWORK_NAME} \\
-                  backend-jenkins
+                  backend-jenkins || {
+                    echo "❌ Backend failed to start"
+                    exit 1
+                }
                 
-                # Run frontend  
+                # Wait for backend to be ready
+                echo "Waiting for backend..."
+                sleep 15
+                
+                # Run frontend
+                echo "Starting frontend..."
                 docker run -d \\
                   --name ${FRONTEND_CONTAINER_NAME} \\
                   -p ${FRONTEND_PORT}:3000 \\
                   --env-file frontend/.env.jenkins \\
                   --network ${NETWORK_NAME} \\
-                  frontend-jenkins
+                  frontend-jenkins || {
+                    echo "❌ Frontend failed to start"
+                    exit 1
+                }
+                
+                echo "✅ All containers deployed successfully"
+                """
+            }
+        }
+        
+        stage('Verify Deployment') {
+            steps {
+                echo '🔍 Verifying deployment...'
+                sh """
+                # Wait for containers to fully start
+                sleep 20
+                
+                echo "=== Container Status ==="
+                docker ps | grep jenkins
+                
+                echo "=== Checking container logs ==="
+                echo "Backend logs (last 5 lines):"
+                docker logs --tail 5 ${BACKEND_CONTAINER_NAME} || echo "Could not get backend logs"
+                
+                echo "Frontend logs (last 5 lines):"
+                docker logs --tail 5 ${FRONTEND_CONTAINER_NAME} || echo "Could not get frontend logs"
+                
+                echo "MongoDB logs (last 5 lines):"
+                docker logs --tail 5 ${MONGO_CONTAINER_NAME} || echo "Could not get MongoDB logs"
                 """
             }
         }
@@ -80,26 +166,72 @@ pipeline {
         stage('Test Application') {
             steps {
                 echo '🧪 Testing application connectivity...'
-                sh 'sleep 15'
-                sh "curl -f http://${EC2_IP}:${FRONTEND_PORT} || exit 1"
-                sh "curl -f http://${EC2_IP}:${BACKEND_PORT} || exit 1"
+                sh """
+                # Test backend API
+                echo "Testing backend API..."
+                if curl -f http://${EC2_IP}:${BACKEND_PORT}/api/products; then
+                    echo "✅ Backend API test passed"
+                else
+                    echo "❌ Backend API test failed"
+                    echo "Trying localhost..."
+                    curl -f http://localhost:${BACKEND_PORT}/api/products || {
+                        echo "❌ Backend completely unreachable"
+                        exit 1
+                    }
+                fi
+                
+                # Test frontend
+                echo "Testing frontend..."
+                if curl -f http://${EC2_IP}:${FRONTEND_PORT}; then
+                    echo "✅ Frontend test passed"
+                else
+                    echo "❌ Frontend test failed"
+                    echo "Trying localhost..."
+                    curl -f http://localhost:${FRONTEND_PORT} || {
+                        echo "❌ Frontend completely unreachable"
+                        exit 1
+                    }
+                fi
+                """
             }
         }
     }
     post {
         always {
-            echo '📊 Pipeline completed. Checking container status:'
-            sh 'docker ps | grep jenkins'
+            echo '📊 Pipeline execution completed'
+            sh """
+            echo "=== Final Container Status ==="
+            docker ps | grep jenkins
+            
+            echo "=== Available URLs ==="
+            echo "Manual Deployment:"
+            echo "  Frontend: http://${EC2_IP}:3000"
+            echo "  Backend:  http://${EC2_IP}:5000"
+            echo ""
+            echo "Jenkins Deployment:"
+            echo "  Frontend: http://${EC2_IP}:${FRONTEND_PORT}"
+            echo "  Backend:  http://${EC2_IP}:${BACKEND_PORT}"
+            echo "  MongoDB:  ${EC2_IP}:${MONGO_PORT}"
+            """
         }
         success {
-            echo '✅ Pipeline completed successfully!'
-            echo "🎯 Jenkins Deployment URLs:"
-            echo "Frontend: http://${EC2_IP}:${FRONTEND_PORT}"
-            echo "Backend API: http://${EC2_IP}:${BACKEND_PORT}"
-            echo "MongoDB: ${EC2_IP}:${MONGO_PORT}"
+            echo '🎉 Pipeline completed successfully!'
+            echo 'Both deployments are now running:'
+            echo "Manual:    http://${EC2_IP}:3000"
+            echo "Jenkins:   http://${EC2_IP}:${FRONTEND_PORT}"
         }
         failure {
-            echo '❌ Pipeline failed!'
+            echo '💥 Pipeline failed!'
+            echo 'Debug information:'
+            sh """
+            echo "=== Failed container logs ==="
+            docker logs ${BACKEND_CONTAINER_NAME} 2>&1 | tail -20 || echo "No backend logs"
+            docker logs ${FRONTEND_CONTAINER_NAME} 2>&1 | tail -20 || echo "No frontend logs"
+            docker logs ${MONGO_CONTAINER_NAME} 2>&1 | tail -10 || echo "No MongoDB logs"
+            
+            echo "=== Current containers ==="
+            docker ps -a | grep jenkins
+            """
         }
     }
 }
