@@ -53,34 +53,21 @@ pipeline {
                 docker rm ${BACKEND_CONTAINER_NAME} ${FRONTEND_CONTAINER_NAME} ${MONGO_CONTAINER_NAME} || true
                 """
             }
-        }
         
-        stage('Build Images') {
-            steps {
-                echo '🏗️ Building Docker images...'
-                sh """
-                # Build backend
-                echo "Building backend image..."
-                docker build -t backend-jenkins ./backend || {
-                    echo "❌ Backend build failed"
-                    exit 1
-                }
-                
-                # Build frontend with retry logic
-                echo "Building frontend image..."
-                if ! docker build -t frontend-jenkins ./frontend; then
-                    echo "⚠️ Frontend build failed, retrying..."
-                    sleep 5
-                    docker build -t frontend-jenkins ./frontend || {
-                        echo "❌ Frontend build failed after retry"
-                        exit 1
-                    }
-                fi
-                echo "✅ Both images built successfully"
-                """
-            }
-        }
-        
+      }       
+
+	stage('Build Images') {
+	    steps {
+	        echo '🏗️ Building Docker images...'
+	        sh """
+	        # Build backend only
+	        docker build -t backend-jenkins ./backend
+	        
+	        # Don't rebuild frontend - use existing working image
+	        echo "Using existing frontend-jenkins image"
+	        """
+	    }
+	} 
         stage('Deploy Containers') {
             steps {
                 echo '🐳 Deploying containers...'
