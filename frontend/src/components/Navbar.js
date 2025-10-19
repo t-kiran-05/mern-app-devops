@@ -6,9 +6,9 @@ export default function Navbar({ cartCount }) {
       <div className="nav-container">
         <div className="nav-brand">
           <span className="nav-icon">🛍️</span>
-          <span className="nav-title">Digital Products Store</span>
+          <span className="nav-title">DigitalStore</span>
         </div>
-        <div className="nav-cart">
+        <div className="nav-cart" title="View Cart">
           <span className="cart-icon">🛒</span>
           {cartCount > 0 && (
             <span className="cart-count">{cartCount}</span>
