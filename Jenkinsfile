@@ -38,15 +38,15 @@ pipeline {
                 echo '🐳 Building and deploying with Docker Compose (Jenkins ports)...'
                 sh """
                 # Stop and remove only Jenkins containers to avoid affecting manual deployment
-                sudo docker stop ${BACKEND_CONTAINER_NAME} ${FRONTEND_CONTAINER_NAME} ${MONGO_CONTAINER_NAME} || true
-                sudo docker rm ${BACKEND_CONTAINER_NAME} ${FRONTEND_CONTAINER_NAME} ${MONGO_CONTAINER_NAME} || true
+                docker stop ${BACKEND_CONTAINER_NAME} ${FRONTEND_CONTAINER_NAME} ${MONGO_CONTAINER_NAME} || true
+                docker rm ${BACKEND_CONTAINER_NAME} ${FRONTEND_CONTAINER_NAME} ${MONGO_CONTAINER_NAME} || true
                 
                 # Build and run with custom ports and container names
-                sudo docker build -t backend-jenkins ./backend
-                sudo docker build -t frontend-jenkins ./frontend
+                docker build -t backend-jenkins ./backend
+                docker build -t frontend-jenkins ./frontend
                 
                 # Run backend
-                sudo docker run -d \\
+                docker run -d \\
                   --name ${BACKEND_CONTAINER_NAME} \\
                   -p ${BACKEND_PORT}:5000 \\
                   --env-file backend/.env.jenkins \\
@@ -54,7 +54,7 @@ pipeline {
                   backend-jenkins
                 
                 # Run frontend  
-                sudo docker run -d \\
+                docker run -d \\
                   --name ${FRONTEND_CONTAINER_NAME} \\
                   -p ${FRONTEND_PORT}:3000 \\
                   --env-file frontend/.env.jenkins \\
@@ -62,7 +62,7 @@ pipeline {
                   frontend-jenkins
                 
                 # Run MongoDB
-                sudo docker run -d \\
+                docker run -d \\
                   --name ${MONGO_CONTAINER_NAME} \\
                   -p ${MONGO_PORT}:27017 \\
                   -v ${MONGO_VOLUME}:/data/db \\
@@ -84,7 +84,7 @@ pipeline {
     post {
         always {
             echo '📊 Pipeline completed. Checking container status:'
-            sh 'sudo docker ps'
+            sh 'docker ps'
         }
         success {
             echo '✅ Pipeline completed successfully!'
