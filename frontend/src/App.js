@@ -151,8 +151,8 @@ function App() {
       
       <div className="products-container">
         <div className="products-header">
-          // In App.js, change the title
-          <h1 className="products-title">Digital Products Store - AUTO DEPLOYED</h1>
+        
+          <h1 className="products-title">Digital Products Store</h1>
           <p className="products-subtitle">
             Discover amazing digital assets for your creative projects
           </p>
