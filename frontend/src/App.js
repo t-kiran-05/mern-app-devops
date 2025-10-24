@@ -152,7 +152,7 @@ function App() {
       <div className="products-container">
         <div className="products-header">
         
-          <h1 className="products-title">Digital Products Store for you</h1>
+          <h1 className="products-title">Digital Products Store for youu</h1>
           <p className="products-subtitle">
             Discover amazing digital assets for your creative projects
           </p>
