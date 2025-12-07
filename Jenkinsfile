@@ -142,7 +142,8 @@ pipeline {
             steps {
                 echo '📥 Checking out test code...'
                 dir('test-repo') {
-                    git branch: 'main', url: 'https://github.com/t-kiran-05/mern-automation-tests.git'
+                     git branch: 'main', url: 'https://github.com/t-kiran-05/mern-automation-tests.git'
+
                 }
             }
         }
