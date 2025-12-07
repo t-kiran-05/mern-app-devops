@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
 import ProductCard from "./components/ProductCard";
+import Cart from "./components/Cart";
 import "./App.css";
 
 function App() {
@@ -8,10 +9,11 @@ function App() {
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [notification, setNotification] = useState({ 
-    show: false, 
-    message: "" 
+  const [notification, setNotification] = useState({
+    show: false,
+    message: ""
   });
+  const [showCart, setShowCart] = useState(false);
 
   // Fetch products on component mount
   useEffect(() => {
@@ -72,10 +74,62 @@ function App() {
     return cart.reduce((total, item) => total + (item.quantity || 1), 0);
   };
 
+  const handleCartClick = () => {
+    setShowCart(true);
+  };
+
+  const handleRemoveItem = async (productId) => {
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/api/cart/${productId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setCart(result.cart);
+        setNotification({
+          show: true,
+          message: result.message
+        });
+        setTimeout(() => setNotification({ show: false, message: "" }), 3000);
+      } else {
+        throw new Error("Failed to remove item");
+      }
+    } catch (error) {
+      console.error("Error removing item:", error);
+      alert("Error removing item. Please try again.");
+    }
+  };
+
+  const handleClearCart = async () => {
+    try {
+      const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:5000";
+      const response = await fetch(`${apiUrl}/api/cart`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setCart(result.cart);
+        setNotification({
+          show: true,
+          message: result.message
+        });
+        setTimeout(() => setNotification({ show: false, message: "" }), 3000);
+      } else {
+        throw new Error("Failed to clear cart");
+      }
+    } catch (error) {
+      console.error("Error clearing cart:", error);
+      alert("Error clearing cart. Please try again.");
+    }
+  };
+
   if (loading) {
-    return (
-      <div className="app">
-        <Navbar cartCount={getCartCount()} />
+  return (
+    <div className="app">
+      <Navbar cartCount={getCartCount()} onCartClick={handleCartClick} />
         <div className="loading">
           <div style={{ fontSize: "2rem", marginBottom: "1rem" }}>🎨</div>
           Loading amazing digital products...
@@ -85,9 +139,9 @@ function App() {
   }
 
   if (error) {
-    return (
-      <div className="app">
-        <Navbar cartCount={getCartCount()} />
+  return (
+    <div className="app">
+      <Navbar cartCount={getCartCount()} onCartClick={handleCartClick} />
         <div className="error">
           <h3>Oops! Something went wrong</h3>
           <p>{error}</p>
@@ -122,7 +176,7 @@ function App() {
 
   return (
     <div className="app">
-      <Navbar cartCount={getCartCount()} />
+      <Navbar cartCount={getCartCount()} onCartClick={handleCartClick} />
       
       {/* Simple Notification */}
       {notification.show && (
@@ -192,6 +246,16 @@ function App() {
           </div>
         )}
       </div>
+
+      {/* Cart Modal */}
+      {showCart && (
+        <Cart
+          cart={cart}
+          onClose={() => setShowCart(false)}
+          onRemoveItem={handleRemoveItem}
+          onClearCart={handleClearCart}
+        />
+      )}
     </div>
   );
 }
